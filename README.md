@@ -119,6 +119,11 @@ accounts the native balance is the larger position. An answer built from one end
 structurally incomplete. (This is the same fork Blockscout's own analysis guidance warns
 about on EVM chains.)
 
+**A transfer can move more than `value`.** A `pay` carrying `close-remainder-to` sweeps the
+sender's entire remaining balance to a third address and closes the account; the swept funds
+are in `close-amount`, never in `amount`. Read `value_total` and `closes_account`, not `value`
+alone. The same applies to `axfer` with `close-to`, which ends an ASA opt-in.
+
 **The address is not hex.** `hash` carries the 58-character base32 address verbatim. A
 client validating `^0x[0-9a-fA-F]{40}$` will reject it — and that rejection is *correct*.
 This module will not fabricate a hex-shaped address to keep such a client quiet.
@@ -140,6 +145,7 @@ This module will not fabricate a hex-shaped address to keep such a client quiet.
 | logs + topics | app-call logs | **partial** — logs yes, **topics do not exist**; no `topic0` filtering |
 | gas used / price | flat fee + opcode budget | **absent** — `fee` in microAlgos is reported, and is not the same quantity |
 | nonce | first-valid/last-valid window | **absent** — reported as `validity`, never as a nonce |
+| transfer amount | `amount` **+** `close-amount` | **two numbers** — a closing transaction also sweeps the whole remaining balance; `value` is what was sent, `value_total` is what left |
 | `eth_call` | — | **absent** — read app state (global/local/boxes) instead |
 
 Every "absent" above is `null` in the response and carries a structural reason in
@@ -151,11 +157,11 @@ Every "absent" above is `null` in the response and carries a structural reason i
 
 | Variable | Default | Notes |
 |---|---|---|
-| `ALGORAND_ALGOD_URL` | `https://mainnet-api.algonode.cloud` | the node — knows *now* |
-| `ALGORAND_INDEXER_URL` | `https://mainnet-idx.algonode.cloud` | the archive — knows *history* |
+| `ALGORAND_NETWORK` | `mainnet` | `mainnet` · `testnet` · `betanet` · `localnet`. **The URL defaults derive from this** — setting the network alone is safe and cannot silently read another chain. An unknown value refuses to start. |
+| `ALGORAND_ALGOD_URL` | *derived from network* | the node — knows *now*. Explicit value always wins |
+| `ALGORAND_INDEXER_URL` | *derived from network* | the archive — knows *history*. Explicit value always wins |
 | `ALGORAND_API_TOKEN` | *(empty)* | AlgoNode is keyless; other providers are not |
 | `ALGORAND_API_TOKEN_HEADER` | `X-Algo-API-Token` | header name differs per provider |
-| `ALGORAND_NETWORK` | `mainnet` | `mainnet` · `testnet` · `betanet` · `localnet` |
 | `ALGORAND_TIMEOUT_S` | `30` | per request |
 | `OPENBDK_HOST` / `OPENBDK_PORT` | `127.0.0.1` / `8100` | service bind |
 
@@ -177,7 +183,7 @@ dangerous thing than an observer.
 
 ```bash
 pip install -e '.[dev,service]'
-pytest -q          # 86 tests, no network
+pytest -q          # 134 tests, no network
 ```
 
 Fixtures in `tests/fixtures/` are **real responses captured from Algorand mainnet on

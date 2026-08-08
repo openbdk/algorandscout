@@ -31,6 +31,17 @@ log = logging.getLogger(__name__)
 DEFAULT_ALGOD = "https://mainnet-api.algonode.cloud"
 DEFAULT_INDEXER = "https://mainnet-idx.algonode.cloud"
 
+#: Public AlgoNode endpoints per network. Defaults are **derived from the network**, never
+#: fixed to mainnet: setting `ALGORAND_NETWORK=testnet` and forgetting the URLs must not
+#: silently serve mainnet data under a testnet label. Reporting the wrong chain's state as
+#: the right chain's is the exact failure this project exists to prevent.
+NETWORK_ENDPOINTS: dict[str, tuple[str, str]] = {
+    "mainnet": ("https://mainnet-api.algonode.cloud", "https://mainnet-idx.algonode.cloud"),
+    "testnet": ("https://testnet-api.algonode.cloud", "https://testnet-idx.algonode.cloud"),
+    "betanet": ("https://betanet-api.algonode.cloud", "https://betanet-idx.algonode.cloud"),
+    "localnet": ("http://localhost:4001", "http://localhost:8980"),
+}
+
 #: Public AlgoNode endpoints are keyless. Other providers (Nodely, Purestake-style
 #: gateways, a self-hosted node) want a token header; the header *name* differs by
 #: provider, so it is configurable rather than hardcoded.
@@ -59,21 +70,48 @@ class NotFound(AlgorandError):
 
 @dataclass
 class AlgorandConfig:
-    algod_url: str = field(default_factory=lambda: os.environ.get("ALGORAND_ALGOD_URL", DEFAULT_ALGOD))
-    indexer_url: str = field(default_factory=lambda: os.environ.get("ALGORAND_INDEXER_URL", DEFAULT_INDEXER))
+    algod_url: str = ""
+    indexer_url: str = ""
     api_token: str = field(default_factory=lambda: os.environ.get("ALGORAND_API_TOKEN", ""))
     token_header: str = field(
         default_factory=lambda: os.environ.get("ALGORAND_API_TOKEN_HEADER", DEFAULT_TOKEN_HEADER)
     )
-    network: str = field(default_factory=lambda: os.environ.get("ALGORAND_NETWORK", "mainnet"))
+    network: str = field(default_factory=lambda: os.environ.get("ALGORAND_NETWORK", "mainnet").lower())
     timeout_s: float = field(default_factory=lambda: float(os.environ.get("ALGORAND_TIMEOUT_S", "30")))
     user_agent: str = field(
         default_factory=lambda: os.environ.get("ALGORAND_USER_AGENT", "Algorandscout/0.1.0")
     )
 
     def __post_init__(self) -> None:
-        self.algod_url = self.algod_url.rstrip("/")
-        self.indexer_url = self.indexer_url.rstrip("/")
+        if self.network not in NETWORK_ENDPOINTS:
+            raise ValueError(
+                f"unknown ALGORAND_NETWORK {self.network!r}; expected one of {sorted(NETWORK_ENDPOINTS)}. "
+                "Refusing to start rather than guess which chain to read."
+            )
+
+        default_algod, default_indexer = NETWORK_ENDPOINTS[self.network]
+        # Precedence: explicit argument > environment > network-derived default. An explicit
+        # URL always wins, because self-hosted nodes and paid providers are the normal case.
+        self.algod_url = (self.algod_url or os.environ.get("ALGORAND_ALGOD_URL") or default_algod).rstrip("/")
+        self.indexer_url = (
+            self.indexer_url or os.environ.get("ALGORAND_INDEXER_URL") or default_indexer
+        ).rstrip("/")
+
+        # A URL that names a *different* network than the label is how mainnet data ends up
+        # reported as testnet. It can be legitimate (a proxy, a private node), so this warns
+        # rather than raises — but it never passes silently.
+        for role, url in (("algod", self.algod_url), ("indexer", self.indexer_url)):
+            for other in NETWORK_ENDPOINTS:
+                if other != self.network and other in url.lower():
+                    log.warning(
+                        "config mismatch: network=%s but %s URL mentions %r (%s). "
+                        "Responses will be labelled %s — verify this is intended.",
+                        self.network,
+                        role,
+                        other,
+                        url,
+                        self.network,
+                    )
 
     @property
     def headers(self) -> dict[str, str]:

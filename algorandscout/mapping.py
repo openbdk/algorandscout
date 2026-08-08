@@ -361,6 +361,7 @@ def map_transaction(tx: dict[str, Any]) -> dict[str, Any]:
     confirmed = tx.get("confirmed-round")
 
     to_address, value, token_transfer = _extract_movement(tx_type, detail)
+    close = _extract_close(tx_type, detail, tx)
 
     inner = tx.get("inner-txns", []) or []
 
@@ -373,6 +374,14 @@ def map_transaction(tx: dict[str, Any]) -> dict[str, Any]:
         "to": {"hash": to_address} if to_address else None,
         "value": str(value) if value is not None else "0",
         "value_decimal": decimal_string(value, ALGO_DECIMALS) if tx_type == "pay" and value is not None else None,
+        # `value` is what the sender explicitly moved. A closing transaction ALSO sweeps the
+        # account's entire remaining balance to `close_remainder_to` — funds that never appear
+        # in `amount`. Reporting only `value` understates the movement and hides the closure,
+        # the same class of omission as flattening a clawback into an ordinary transfer. Both
+        # numbers are reported: `value` keeps its meaning, `value_total` is what actually left.
+        "close": close,
+        "closes_account": close["closes_account"] if close else False,
+        "value_total": close["value_total"] if close else (str(value) if value is not None else "0"),
         "fee": str(tx.get("fee", 0)),
         "fee_decimal": decimal_string(tx.get("fee", 0), ALGO_DECIMALS),
         "status": "ok" if confirmed else "pending",
@@ -433,6 +442,54 @@ def _extract_movement(tx_type: Optional[str], detail: dict[str, Any]) -> tuple[O
     return None, 0, None
 
 
+def _extract_close(tx_type: Optional[str], detail: dict[str, Any], tx: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """
+    Account/holding closure — the movement that hides inside a transaction's fine print.
+
+    A `pay` with `close-remainder-to` sweeps the sender's **entire remaining balance** to that
+    address and closes the account; the swept amount is `close-amount`, never `amount`. An
+    `axfer` with `close-to` does the same for one ASA holding and closes the opt-in.
+
+    Returns None when nothing closes, so `closes_account` is false by absence rather than by a
+    field that has to be checked for truthiness.
+    """
+    if tx_type == "pay":
+        target = _clean(detail.get("close-remainder-to"))
+        if not target:
+            return None
+        amount = detail.get("amount", 0) or 0
+        close_amount = detail.get("close-amount", tx.get("closing-amount", 0)) or 0
+        return {
+            "closes_account": True,
+            "close_remainder_to": target,
+            "close_amount": str(close_amount),
+            "close_amount_decimal": decimal_string(close_amount, ALGO_DECIMALS),
+            "value_total": str(amount + close_amount),
+            "value_total_decimal": decimal_string(amount + close_amount, ALGO_DECIMALS),
+            "asset_id": None,
+        }
+
+    if tx_type == "axfer":
+        target = _clean(detail.get("close-to"))
+        if not target:
+            return None
+        amount = detail.get("amount", 0) or 0
+        close_amount = detail.get("close-amount", 0) or 0
+        return {
+            # An axfer close ends an ASA opt-in, not the Algorand account itself.
+            "closes_account": False,
+            "closes_asset_holding": True,
+            "close_remainder_to": target,
+            "close_amount": str(close_amount),
+            "close_amount_decimal": None,  # ASA decimals are per-asset and not in this payload
+            "value_total": str(amount + close_amount),
+            "value_total_decimal": None,
+            "asset_id": detail.get("asset-id"),
+        }
+
+    return None
+
+
 def _signature_type(signature: dict[str, Any]) -> Optional[str]:
     if "sig" in signature:
         return "ed25519"
@@ -460,6 +517,21 @@ def _next_page(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 
 # ----------------------------------------------------------------------- stats
+
+
+def map_asset_holders(payload: dict[str, Any], *, decimals: Optional[int] = None) -> dict[str, Any]:
+    """Indexer `/v2/assets/{id}/balances` → Blockscout-shaped holder page."""
+    items = [
+        {
+            "address": {"hash": balance.get("address")},
+            "value": str(balance.get("amount", 0)),
+            "value_decimal": decimal_string(balance.get("amount", 0), decimals) if decimals is not None else None,
+            "is_frozen": balance.get("is-frozen", False),
+            "deleted": balance.get("deleted", False),
+        }
+        for balance in payload.get("balances", []) or []
+    ]
+    return {"items": items, "next_page_params": _next_page(payload)}
 
 
 def map_stats(status: dict[str, Any], health: dict[str, Any]) -> dict[str, Any]:

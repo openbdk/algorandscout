@@ -16,6 +16,7 @@ transaction submission. Adding one would change what this module is.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -30,6 +31,7 @@ from .mapping import (
     map_account_assets,
     map_application,
     map_asset,
+    map_asset_holders,
     map_block,
     map_stats,
     map_transaction,
@@ -37,6 +39,10 @@ from .mapping import (
 )
 
 log = logging.getLogger(__name__)
+
+#: Max concurrent ASA metadata lookups when resolving a holdings page. Bounded so a wide
+#: account cannot burst a public keyless endpoint into rate-limiting us.
+RESOLVE_CONCURRENCY = 8
 
 #: Native indexer paths the passthrough will serve. An allowlist rather than a prefix
 #: match: the passthrough must not become an open proxy to anything the upstream adds later.
@@ -162,15 +168,25 @@ async def get_address_token_balances(
 
     params: dict[int, dict] = {}
     if resolve:
-        for holding in payload.get("assets", []) or []:
-            asset_id = holding.get("asset-id")
-            if asset_id is None or asset_id in params:
-                continue
-            try:
-                asset_payload = await c.asset(asset_id)
-                params[asset_id] = (asset_payload.get("asset", {}) or {}).get("params", {}) or {}
-            except AlgorandError as exc:  # a destroyed ASA 404s; the holding is still real
-                log.debug("asset %s unresolved: %s", asset_id, exc)
+        # Resolution is one upstream call per distinct ASA. Serially that is `limit` round
+        # trips before the first byte reaches the caller; a 100-asset account would sit on
+        # ~100 sequential requests. Fan out with a bounded semaphore instead — bounded because
+        # an unbounded fan-out on a public keyless endpoint is a good way to get rate-limited.
+        asset_ids = {h["asset-id"] for h in (payload.get("assets") or []) if h.get("asset-id") is not None}
+        semaphore = asyncio.Semaphore(RESOLVE_CONCURRENCY)
+
+        async def resolve_one(asset_id: int) -> tuple[int, Optional[dict]]:
+            async with semaphore:
+                try:
+                    asset_payload = await c.asset(asset_id)
+                    return asset_id, (asset_payload.get("asset", {}) or {}).get("params", {}) or {}
+                except AlgorandError as exc:  # a destroyed ASA 404s; the holding is still real
+                    log.debug("asset %s unresolved: %s", asset_id, exc)
+                    return asset_id, None
+
+        for asset_id, resolved in await asyncio.gather(*(resolve_one(a) for a in asset_ids)):
+            if resolved is not None:
+                params[asset_id] = resolved
 
     return map_account_assets(payload, params)
 
@@ -230,17 +246,17 @@ async def get_token_holders(
     request: Request,
     limit: int = Query(50, ge=1, le=100),
     next_token: Optional[str] = Query(None),
+    resolve: bool = Query(True, description="Resolve the ASA's decimals so holdings render as decimals"),
 ) -> dict[str, Any]:
-    payload = await client(request).asset_balances(asset_id, limit=limit, next_token=next_token)
-    items = [
-        {
-            "address": {"hash": b.get("address")},
-            "value": str(b.get("amount", 0)),
-            "is_frozen": b.get("is-frozen", False),
-        }
-        for b in payload.get("balances", []) or []
-    ]
-    return {"items": items, "next_page_params": {"next_token": payload["next-token"]} if payload.get("next-token") else None}
+    c = client(request)
+    payload = await c.asset_balances(asset_id, limit=limit, next_token=next_token)
+    decimals = None
+    if resolve:
+        try:
+            decimals = ((await c.asset(asset_id)).get("asset", {}) or {}).get("params", {}).get("decimals")
+        except AlgorandError as exc:
+            log.debug("asset %s decimals unresolved: %s", asset_id, exc)
+    return map_asset_holders(payload, decimals=decimals)
 
 
 # ------------------------------------------------------------- contract routes
@@ -316,7 +332,9 @@ async def search(
 async def passthrough(path: str, request: Request) -> Any:
     """Safelisted native indexer passthrough — Algorand's own shapes, untranslated."""
     target = f"/v2/{path}"
-    if not any(target.startswith(prefix) for prefix in PASSTHROUGH_PREFIXES):
+    # Segment-aware: a bare startswith would let "/v2/accountsX" through on the "/v2/accounts"
+    # prefix. The allowlisted prefix must be followed by a path separator or end the path.
+    if not any(target == p or target.startswith(p + "/") for p in PASSTHROUGH_PREFIXES):
         raise HTTPException(status_code=403, detail=f"path not in passthrough allowlist: {target}")
     params = dict(request.query_params)
     return await client(request).indexer(target, params)

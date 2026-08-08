@@ -1,0 +1,30 @@
+{
+ "transaction": {
+  "close-rewards": 0,
+  "closing-amount": 97144,
+  "confirmed-round": 78783,
+  "fee": 2950,
+  "first-valid": 78775,
+  "genesis-hash": "wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
+  "genesis-id": "mainnet-v1.0",
+  "id": "OOQJ3LAGJ3YYEKIEKCAXZ4UMFI5FN3MOZCF3CYHIKA5NRXBYE6MA",
+  "intra-round-offset": 0,
+  "last-valid": 79775,
+  "note": "MTIz",
+  "payment-transaction": {
+   "amount": 1000000,
+   "close-amount": 97144,
+   "close-remainder-to": "TIBGRAR2MGJHMIAWW7S26KIKUJA6NVIHDD6GYNODU67HPTKR5FALC7ASCA",
+   "receiver": "TIBGRAR2MGJHMIAWW7S26KIKUJA6NVIHDD6GYNODU67HPTKR5FALC7ASCA"
+  },
+  "receiver-rewards": 0,
+  "round-time": 1560683407,
+  "sender": "B73LF4YTNBYS3TC73HCELP64GDB2DN6WDWHDWQGEMYVF2W3KECIBUGQ32Y",
+  "sender-rewards": 92,
+  "signature": {
+   "sig": "tjAZK3t1Cs0ED7FZPP/qG9G97SKHMgM3pJJ7H2r+dHVlytuAfCGFBTtZRGagSMSY/gLBngfkB4bQh/awvGZ/CA=="
+  },
+  "tx-type": "pay"
+ },
+ "current-round": 63880094
+}
