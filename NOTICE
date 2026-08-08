@@ -6,65 +6,40 @@ See the LICENSE file in this directory for the full text.
 
 Author: Professor Codephreak / BANKON — https://github.com/openbdk
 Part of the Open Blockchain Development Kit (OpenBDK).
+Source: https://github.com/openbdk/algorandscout
 
 --------------------------------------------------------------------------------
-INDEPENDENCE STATEMENT
+INDEPENDENT WORK
 --------------------------------------------------------------------------------
 
-This module is an INDEPENDENT WORK. It contains no Blockscout source code, links
-no Blockscout library, imports no Blockscout module, and is not compiled, built,
-or distributed as part of the Blockscout application.
+Algorandscout is an original work. It contains no third-party explorer source
+code, vendors none, and links none. Its only runtime dependencies are aiohttp
+and, for the service, FastAPI and uvicorn.
 
-It interoperates with Blockscout-shaped clients solely by SERVING A COMPATIBLE
-HTTP RESPONSE SHAPE over its own REST surface. Response-shape compatibility is
-interface compatibility, not derivation.
+Its REST layout follows conventions common to blockchain explorer APIs so that
+existing tooling interoperates. Interface convention is not derivation, in the
+same sense that a program which reads a documented file format is not a
+derivative of the program that writes it.
 
-This distinction is deliberate and load-bearing. The Blockscout Software Licence
-(SPDX: LicenseRef-Blockscout, effective 2026-04-22) defines a "Derivative Work"
-and then states, verbatim:
+Where Algorand's data model and a generic explorer model disagree, Algorand
+governs. Concepts the chain does not have are reported as absent and explained
+at /api/v2/capabilities, rather than emulated.
 
-    "For the avoidance of doubt, Derivative Works do not include works that
-     remain separable from, or merely link to, the Software."
-
-This module is such a separable work. It therefore:
-
-  * is licensed independently, under the BANKON License (Apache-2.0);
-  * may be distributed, sublicensed and used commercially by its own licensor,
-    without a Blockscout Commercial Licence;
-  * grants Blockscout Limited no licence over its source under clause 5(c) of
-    the Blockscout Software Licence, which reaches only Derivative Works.
-
-To preserve that separability, this module MUST NOT:
-
-  1. vendor, copy, or adapt any Blockscout source file;
-  2. be merged into a Blockscout source tree, build, or release artifact;
-  3. be added as an umbrella application inside the Blockscout Elixir project;
-  4. be distributed inside any repository whose contents are a Blockscout
-     Derivative Work.
-
-Deploying this module ALONGSIDE Blockscout — two services, two processes, two
-repositories, talking over HTTP — is the supported topology and preserves the
-separation. Merging it in destroys the separation and, with it, this licence.
-
-Operators who deploy Blockscout itself remain independently subject to the
-Blockscout Software Licence, including its interface-attribution requirement and
-its restriction on commercial or hosted use without a Commercial Licence. Nothing
-in this NOTICE grants any right in Blockscout, and nothing here is legal advice.
+No affiliation with, sponsorship by, or endorsement from any other explorer
+project or its maintainers is claimed or implied.
 
 --------------------------------------------------------------------------------
 UPSTREAM SERVICES
 --------------------------------------------------------------------------------
 
-This module reads public Algorand infrastructure and bundles none of it:
+Algorandscout reads public Algorand infrastructure and bundles none of it:
 
-  * Algorand algod / indexer REST APIs — Algorand Foundation / Algorand
+  * Algorand algod and indexer REST APIs — Algorand Foundation / Algorand
     Technologies. https://developer.algorand.org
   * Default public endpoints: AlgoNode (https://algonode.io), keyless.
-    Configurable via ALGORAND_ALGOD_URL / ALGORAND_INDEXER_URL.
+    Configurable via ALGORAND_ALGOD_URL / ALGORAND_INDEXER_URL, or derived from
+    ALGORAND_NETWORK.
 
-"Blockscout" is a trademark of Blockscout Limited. It is used here nominatively,
-to identify the API shape this module is compatible with. No affiliation with,
-sponsorship by, or endorsement from Blockscout Limited is claimed or implied.
-
-"Algorand" is a trademark of the Algorand Foundation. Used nominatively. No
-affiliation or endorsement is claimed or implied.
+"Algorand" is a trademark of the Algorand Foundation, used nominatively to
+identify the chain this software reads. No affiliation or endorsement is claimed
+or implied.

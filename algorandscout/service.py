@@ -1,14 +1,14 @@
 # Copyright (c) 2026 BANKON — all rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "BANKON License"). See LICENSE.
 """
-The HTTP surface — a Blockscout-shaped read API for Algorand.
+The HTTP surface — the Algorandscout explorer API.
 
 Two route families, mounted side by side:
 
-* ``/api/v2/*`` — Blockscout-shaped. A client written against a Blockscout explorer API
-  keeps working, subject to the boundary declared at ``/api/v2/capabilities``.
-* ``/algorand/v2/*`` — a safelisted passthrough to the native indexer, for callers who
-  want Algorand's own shapes with none of the translation.
+* ``/api/v2/*`` — the explorer API: accounts, assets, applications, transactions and
+  rounds, subject to the boundary declared at ``/api/v2/capabilities``.
+* ``/algorand/v2/*`` — an allowlisted passthrough to the indexer, for callers who want
+  Algorand's own shapes with none of the translation.
 
 The service is **read-only end to end**. There is no signing key, no write route, and no
 transaction submission. Adding one would change what this module is.
@@ -88,9 +88,9 @@ app = FastAPI(
     title="Algorandscout",
     version=caps.MODULE_VERSION,
     description=(
-        "Blockscout-shaped read API for Algorand. Independent work, BANKON licensed; "
-        "contains no Blockscout source code. Algorand is not an EVM chain — see "
-        "/api/v2/capabilities before assuming a field exists."
+        "An explorer API for Algorand — accounts, assets, applications, transactions and "
+        "rounds. Part of the Open Blockchain Development Kit, BANKON licensed. Algorand's "
+        "model governs: see /api/v2/capabilities before assuming a field exists."
     ),
     lifespan=lifespan,
 )
@@ -223,7 +223,7 @@ async def get_capabilities() -> dict[str, Any]:
     return caps.capabilities()
 
 
-@app.get("/api/v2/stats", tags=["blockscout"])
+@app.get("/api/v2/stats", tags=["explorer"])
 async def stats(request: Request) -> dict[str, Any]:
     c = client(request)
     status = await c.status()
@@ -234,14 +234,14 @@ async def stats(request: Request) -> dict[str, Any]:
 # ------------------------------------------------------------- address routes
 
 
-@app.get("/api/v2/addresses/{address}", tags=["blockscout"])
+@app.get("/api/v2/addresses/{address}", tags=["explorer"])
 async def get_address(address: str, request: Request, live: bool = Query(False)) -> dict[str, Any]:
     validate_address(address)
     payload = await client(request).account(address, live=live)
     return map_account(payload)
 
 
-@app.get("/api/v2/addresses/{address}/transactions", tags=["blockscout"])
+@app.get("/api/v2/addresses/{address}/transactions", tags=["explorer"])
 async def get_address_transactions(
     address: str,
     request: Request,
@@ -269,7 +269,7 @@ async def get_address_transactions(
     return map_transaction_list(payload, chain_tip=tip)
 
 
-@app.get("/api/v2/addresses/{address}/token-balances", tags=["blockscout"])
+@app.get("/api/v2/addresses/{address}/token-balances", tags=["explorer"])
 async def get_address_token_balances(
     address: str,
     request: Request,
@@ -314,7 +314,7 @@ async def get_address_token_balances(
 # ---------------------------------------------------------- transaction routes
 
 
-@app.get("/api/v2/transactions/{txid}", tags=["blockscout"])
+@app.get("/api/v2/transactions/{txid}", tags=["explorer"])
 async def get_transaction(txid: str, request: Request) -> dict[str, Any]:
     validate_txid(txid)
     payload = await cache(request).get_or_fetch(
@@ -335,7 +335,7 @@ async def get_transaction(txid: str, request: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------- block routes
 
 
-@app.get("/api/v2/blocks/{round_number}", tags=["blockscout"])
+@app.get("/api/v2/blocks/{round_number}", tags=["explorer"])
 async def get_block(
     round_number: int,
     request: Request,
@@ -348,7 +348,7 @@ async def get_block(
     return map_block(payload, include_transactions=include_transactions)
 
 
-@app.get("/api/v2/blocks", tags=["blockscout"])
+@app.get("/api/v2/blocks", tags=["explorer"])
 async def get_latest_block(request: Request) -> dict[str, Any]:
     c = client(request)
     status = await c.status()
@@ -362,7 +362,7 @@ async def get_latest_block(request: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------- token routes
 
 
-@app.get("/api/v2/tokens/{asset_id}", tags=["blockscout"])
+@app.get("/api/v2/tokens/{asset_id}", tags=["explorer"])
 async def get_token(asset_id: int, request: Request) -> dict[str, Any]:
     validate_uint64(asset_id, name="asset_id")
     payload = await cache(request).get_or_fetch(
@@ -371,7 +371,7 @@ async def get_token(asset_id: int, request: Request) -> dict[str, Any]:
     return map_asset(payload)
 
 
-@app.get("/api/v2/tokens/{asset_id}/holders", tags=["blockscout"])
+@app.get("/api/v2/tokens/{asset_id}/holders", tags=["explorer"])
 async def get_token_holders(
     asset_id: int,
     request: Request,
@@ -394,7 +394,7 @@ async def get_token_holders(
 # ------------------------------------------------------------- contract routes
 
 
-@app.get("/api/v2/smart-contracts/{app_id}", tags=["blockscout"])
+@app.get("/api/v2/smart-contracts/{app_id}", tags=["explorer"])
 async def get_smart_contract(app_id: int, request: Request) -> dict[str, Any]:
     validate_uint64(app_id, name="app_id")
     payload = await cache(request).get_or_fetch(
@@ -406,7 +406,7 @@ async def get_smart_contract(app_id: int, request: Request) -> dict[str, Any]:
 # ----------------------------------------------------------------------- search
 
 
-@app.get("/api/v2/search", tags=["blockscout"])
+@app.get("/api/v2/search", tags=["explorer"])
 async def search(
     request: Request,
     q: str = Query(..., min_length=1),
@@ -473,7 +473,7 @@ async def search(
 
 @app.get("/algorand/v2/{path:path}", tags=["native"])
 async def passthrough(path: str, request: Request) -> Any:
-    """Safelisted native indexer passthrough — Algorand's own shapes, untranslated."""
+    """Allowlisted indexer passthrough — Algorand's own shapes, untranslated."""
     target = f"/v2/{path}"
     # Segment-aware: a bare startswith would let "/v2/accountsX" through on the "/v2/accounts"
     # prefix. The allowlisted prefix must be followed by a path separator or end the path.

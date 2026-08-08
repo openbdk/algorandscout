@@ -1,16 +1,16 @@
 # Copyright (c) 2026 BANKON — all rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "BANKON License"). See LICENSE.
 """
-Algorand → Blockscout-shaped DTOs.
+Algorand indexer payloads → Algorandscout response objects.
 
 Every function here is pure: dict in, dict out, no I/O. That is deliberate — the mapping
 is the part most likely to be wrong, so it is the part that must be testable without a
 network.
 
-The shapes follow Blockscout's `/api/v2` response conventions closely enough that a
-client written against them keeps working, and every field that has no honest Algorand
-equivalent is either omitted or carries an explicit `null` alongside an entry in
-`capabilities.UNSUPPORTED`. Nothing here invents a value to fill a hole.
+Response shapes follow conventions common to explorer APIs so existing tooling
+interoperates, and every field with no honest Algorand equivalent is either omitted or
+carries an explicit `null` alongside an entry in `capabilities.UNSUPPORTED`. Nothing
+here invents a value to fill a hole.
 
 Field names on the Algorand side are hyphenated (`confirmed-round`, `asset-id`) because
 that is what the indexer returns; they are verified against live mainnet responses
@@ -37,7 +37,7 @@ TX_TYPE_DETAIL_KEY = {
     "hb": "heartbeat-transaction",
 }
 
-#: Human labels, used where Blockscout would show a decoded method name.
+#: Human-readable labels for each transaction type.
 TX_TYPE_LABEL = {
     "pay": "Payment",
     "axfer": "Asset Transfer",
@@ -93,7 +93,7 @@ def _clean(address: Optional[str]) -> Optional[str]:
 
 def map_account(payload: dict[str, Any]) -> dict[str, Any]:
     """
-    Indexer `/v2/accounts/{address}` → Blockscout-shaped address object.
+    Indexer `/v2/accounts/{address}` → address object.
 
     `hash` is the Algorand address verbatim. See `capabilities.CAVEATS["address_hash"]`.
     """
@@ -132,7 +132,7 @@ def map_account(payload: dict[str, Any]) -> dict[str, Any]:
 
 def map_account_assets(payload: dict[str, Any], asset_params: Optional[dict[int, dict]] = None) -> dict[str, Any]:
     """
-    Indexer `/v2/accounts/{addr}/assets` → Blockscout-shaped token-balance list.
+    Indexer `/v2/accounts/{addr}/assets` → token-balance list.
 
     `asset_params` optionally supplies resolved ASA metadata keyed by asset id; without
     it the entries carry the holding only, because the holding record itself does not
@@ -177,7 +177,7 @@ def _token_stub(asset_id: Optional[int], params: dict[str, Any]) -> dict[str, An
 
 def classify_asset(params: dict[str, Any]) -> str:
     """
-    ASA → a Blockscout-style token type.
+    ASA → a token type.
 
     Heuristic, and labelled as one. Algorand has a single asset primitive; the
     NFT/fungible distinction is a *convention* (total=1, decimals=0 per ARC-3/19/69),
@@ -193,7 +193,7 @@ def classify_asset(params: dict[str, Any]) -> str:
 
 
 def map_asset(payload: dict[str, Any]) -> dict[str, Any]:
-    """Indexer `/v2/assets/{id}` → Blockscout-shaped token object."""
+    """Indexer `/v2/assets/{id}` → token object."""
     asset = payload.get("asset", payload) or {}
     params = asset.get("params", {}) or {}
     total = params.get("total")
@@ -235,7 +235,7 @@ def map_asset(payload: dict[str, Any]) -> dict[str, Any]:
 
 def map_application(payload: dict[str, Any]) -> dict[str, Any]:
     """
-    Indexer `/v2/applications/{id}` → Blockscout-shaped smart-contract object.
+    Indexer `/v2/applications/{id}` → smart-contract object.
 
     `approval-program` / `clear-state-program` are base64 AVM bytecode. There is no
     Solidity ABI and no verified-source registry — both fields are explicitly null
@@ -302,7 +302,7 @@ def _decode_state_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def map_block(payload: dict[str, Any], *, include_transactions: bool = False) -> dict[str, Any]:
     """
-    Indexer `/v2/blocks/{round}` → Blockscout-shaped block object.
+    Indexer `/v2/blocks/{round}` → block object.
 
     Algorand rounds are final on write, so there is no reorg depth, no uncle list, and
     no difficulty. `proposer` is the analogue of `miner`.
@@ -349,7 +349,7 @@ def map_block(payload: dict[str, Any], *, include_transactions: bool = False) ->
 
 def map_transaction(tx: dict[str, Any]) -> dict[str, Any]:
     """
-    Indexer transaction → Blockscout-shaped transaction object.
+    Indexer transaction → transaction object.
 
     A single Algorand transaction carries exactly one typed sub-object. The mapper reads
     that sub-object rather than guessing from top-level fields, and surfaces the
@@ -520,7 +520,7 @@ def _next_page(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 
 def map_asset_holders(payload: dict[str, Any], *, decimals: Optional[int] = None) -> dict[str, Any]:
-    """Indexer `/v2/assets/{id}/balances` → Blockscout-shaped holder page."""
+    """Indexer `/v2/assets/{id}/balances` → holder page."""
     items = [
         {
             "address": {"hash": balance.get("address")},
@@ -535,7 +535,7 @@ def map_asset_holders(payload: dict[str, Any], *, decimals: Optional[int] = None
 
 
 def map_stats(status: dict[str, Any], health: dict[str, Any]) -> dict[str, Any]:
-    """algod `/v2/status` + client health → Blockscout-shaped `/api/v2/stats`."""
+    """algod `/v2/status` + client health → the `/api/v2/stats` payload."""
     return {
         "total_blocks": str(status.get("last-round", 0)),
         "chain_tip": status.get("last-round"),

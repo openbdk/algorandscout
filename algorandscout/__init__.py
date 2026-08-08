@@ -1,10 +1,11 @@
 # Copyright (c) 2026 BANKON — all rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "BANKON License"). See LICENSE.
 """
-Algorandscout — a Blockscout-shaped read API for Algorand.
+Algorandscout — an explorer API for Algorand.
 
-Independent work. Contains no Blockscout source code; interoperates by response shape
-only. See NOTICE for the separability statement that this licence depends on.
+Accounts, assets, applications, transactions and rounds, served over algod + indexer.
+Part of the Open Blockchain Development Kit, licensed under the BANKON License.
+An independent work: see NOTICE.
 """
 
 from . import capabilities  # submodule — must stay bound to the module, not a function

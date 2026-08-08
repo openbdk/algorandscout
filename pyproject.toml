@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "algorandscout"
 version = "0.1.0"
-description = "Blockscout-shaped read API for Algorand. Independent work, BANKON licensed."
+description = "Algorandscout — an explorer API for Algorand. Part of OpenBDK, BANKON licensed."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Professor Codephreak / BANKON" }]
-keywords = ["algorand", "blockscout", "explorer", "openbdk", "avm", "asa", "indexer"]
+keywords = ["algorand", "explorer", "openbdk", "avm", "asa", "asc", "indexer", "algod", "blockchain"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",

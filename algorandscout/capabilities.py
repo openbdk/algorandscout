@@ -1,14 +1,14 @@
 # Copyright (c) 2026 BANKON — all rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "BANKON License"). See LICENSE.
 """
-What this module can and cannot answer.
+What this API can and cannot answer.
 
 A read surface that silently returns a plausible-looking `null` for a question the
-underlying chain cannot answer is worse than one that refuses. Algorand is not an EVM
-chain, and several concepts that Blockscout-shaped clients treat as universal simply do
-not exist here. This file is the machine-readable statement of that boundary; the
-service exposes it at `GET /api/v2/capabilities` so a client can find out *before* it
-builds a query on a field that will never be populated.
+chain cannot answer is worse than one that refuses. Several concepts that are treated
+as universal across blockchain tooling — gas, nonces, indexed log topics, reorgs — do
+not exist on Algorand at all. This file is the machine-readable statement of that
+boundary; the service exposes it at `GET /api/v2/capabilities` so a client can find out
+*before* it builds a query on a field that will never be populated.
 """
 
 from __future__ import annotations
@@ -34,26 +34,26 @@ CHAIN = {
     },
 }
 
-#: Blockscout-shaped concepts this module serves, and what they are actually made of.
+#: What this API serves, and what each thing is actually made of on Algorand.
 SUPPORTED: dict[str, str] = {
-    "blocks": "Algorand rounds. One round ≈ one block; rounds are final on write.",
+    "blocks": "Algorand rounds. One round is one block; rounds are final on write.",
     "transactions": "Algorand transactions, all seven types (pay, keyreg, acfg, axfer, afrz, appl, stpf).",
     "internal_transactions": "Inner transactions emitted by application calls — a genuine analogue.",
-    "addresses": "Algorand accounts. Note the address format is NOT 20-byte hex.",
+    "addresses": "Algorand accounts, addressed by 58-character base32 (not 20-byte hex).",
     "token_balances": "ASA holdings (`/v2/accounts/{addr}/assets`).",
     "tokens": "Algorand Standard Assets. Fungible and non-fungible alike.",
     "token_transfers": "Asset-transfer (axfer) transactions.",
-    "smart_contracts": "Algorand applications (app IDs) with TEAL/AVM approval and clear-state programs.",
+    "smart_contracts": "Algorand applications (app IDs) with TEAL/AVM approval and clear-state programs, declared state schemas and decoded global state.",
     "search": "Asset unit-name/name search, plus exact address / txid / app-id / round resolution.",
     "stats": "Chain tip, indexer lag, block time.",
 }
 
-#: Concepts a Blockscout-shaped client may ask for that Algorand cannot supply.
-#: The value is the reason, and the reason is always structural — not "not implemented yet".
+#: Concepts a client may ask for that Algorand cannot supply. The value is the reason,
+#: and the reason is always structural — not "not implemented yet".
 UNSUPPORTED: dict[str, str] = {
     "logs_by_topic": (
         "Algorand application logs are an ordered array of opaque byte strings. There are no "
-        "indexed topics, so there is nothing to filter on. `topic0`-style queries cannot be "
+        "indexed topics, so there is nothing to filter on. Topic-style queries cannot be "
         "emulated without full-scanning and guessing."
     ),
     "gas_price": (
@@ -61,20 +61,21 @@ UNSUPPORTED: dict[str, str] = {
         "raised only by congestion) and compute is bounded by a fixed opcode budget, not purchased."
     ),
     "gas_used": "See gas_price. `fee` in microAlgos is reported instead and is not the same quantity.",
-    "contract_abi_solidity": (
+    "contract_abi": (
         "Applications are TEAL/AVM programs. Where a contract follows ARC-4 an ABI-like method "
-        "surface exists, but it is not a Solidity ABI and is not stored on chain by default."
+        "surface exists, but it is not stored on chain by default and cannot be recovered from "
+        "the compiled program."
     ),
     "contract_source_verification": (
-        "There is no Etherscan-style verified-source registry for AVM programs on the public "
-        "indexer. The approval/clear programs are available as compiled bytecode only."
+        "There is no public verified-source registry for AVM programs. The approval and "
+        "clear-state programs are available as compiled bytecode only."
     ),
     "eth_call": (
         "There is no read-only VM invocation over the public indexer. Application *state* is "
         "readable directly (global state, local state, boxes) which answers most of the same "
         "questions without executing anything."
     ),
-    "erc20_allowance": (
+    "token_allowance": (
         "ASAs have no allowance/approve model. Delegated spending is expressed with clawback "
         "addresses and logic signatures, which are not equivalent and must not be presented as such."
     ),
@@ -95,7 +96,7 @@ CAVEATS: dict[str, str] = {
     "address_hash": (
         "`hash` carries the 58-character base32 Algorand address verbatim. Clients that validate "
         "against `^0x[0-9a-fA-F]{40}$` will reject it. That rejection is correct behaviour and this "
-        "module will not fabricate a hex-shaped address to satisfy it."
+        "API will not fabricate a hex-shaped address to satisfy it."
     ),
     "nft_detection": (
         "An ASA with total=1 and decimals=0 is *conventionally* a non-fungible token (ARC-3 / "
@@ -130,9 +131,10 @@ def capabilities() -> dict[str, Any]:
         "unsupported": UNSUPPORTED,
         "caveats": CAVEATS,
         "notice": (
-            "This module serves Algorand through a Blockscout-shaped REST surface for client "
-            "compatibility. It is an independent work and contains no Blockscout source code. "
-            "Algorand is not an EVM chain; see `unsupported` before assuming a field exists."
+            "Algorandscout is an independent Algorand explorer API, part of the Open Blockchain "
+            "Development Kit, licensed under the BANKON License. Its REST layout follows "
+            "conventions common to explorer APIs so existing tooling interoperates, but Algorand's "
+            "model governs: see `unsupported` before assuming a field exists."
         ),
     }
 

@@ -445,5 +445,7 @@ class TestCapabilities:
         json.dumps(caps.capabilities())
 
     def test_the_known_traps_are_documented(self):
-        for trap in ("logs_by_topic", "gas_price", "erc20_allowance", "nonce"):
+        # Key names are chain-native: Algorand has ASAs and no allowance model, so the
+        # entry is `token_allowance`, not an EVM-flavoured `erc20_allowance`.
+        for trap in ("logs_by_topic", "gas_price", "token_allowance", "nonce", "contract_abi"):
             assert caps.why_unsupported(trap)

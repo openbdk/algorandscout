@@ -10,9 +10,9 @@ Two upstreams, deliberately kept distinct because they answer different question
 * **indexer** (`ALGORAND_INDEXER_URL`) is the archive. It knows *history*: transactions
   by address, blocks by round, assets, applications. It lags the node by a round or two.
 
-Neither is trusted to be up. Every call retries 5xx three times (the same rule the
-Blockscout MCP server publishes for its own upstreams) and never retries 4xx, which are
-deterministic.
+Neither is trusted to be up. Every call retries 5xx three times with jittered backoff and
+never retries 4xx — except 429, which describes when a request arrived rather than what
+was in it.
 """
 
 from __future__ import annotations
@@ -311,8 +311,9 @@ class AlgorandClient:
         asset_id: Optional[int] = None,
     ) -> dict[str, Any]:
         """
-        `after_time`/`before_time` are RFC-3339 and are the Algorand analogue of the
-        `age_from`/`age_to` window on Blockscout's time-filtered endpoints.
+        `after_time`/`before_time` are RFC-3339. These are the only endpoints with a real
+        time filter, so any time-bounded question should start here rather than paginate
+        another endpoint from one end of history.
         """
         return await self.indexer(
             f"/v2/accounts/{address}/transactions",
