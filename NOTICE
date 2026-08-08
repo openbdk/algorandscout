@@ -1,0 +1,70 @@
+OpenBDK Algorand Module
+Copyright (c) 2026 BANKON — all rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "BANKON License").
+See the LICENSE file in this directory for the full text.
+
+Author: Professor Codephreak / BANKON — https://github.com/openbdk
+Part of the Open Blockchain Development Kit (OpenBDK).
+
+--------------------------------------------------------------------------------
+INDEPENDENCE STATEMENT
+--------------------------------------------------------------------------------
+
+This module is an INDEPENDENT WORK. It contains no Blockscout source code, links
+no Blockscout library, imports no Blockscout module, and is not compiled, built,
+or distributed as part of the Blockscout application.
+
+It interoperates with Blockscout-shaped clients solely by SERVING A COMPATIBLE
+HTTP RESPONSE SHAPE over its own REST surface. Response-shape compatibility is
+interface compatibility, not derivation.
+
+This distinction is deliberate and load-bearing. The Blockscout Software Licence
+(SPDX: LicenseRef-Blockscout, effective 2026-04-22) defines a "Derivative Work"
+and then states, verbatim:
+
+    "For the avoidance of doubt, Derivative Works do not include works that
+     remain separable from, or merely link to, the Software."
+
+This module is such a separable work. It therefore:
+
+  * is licensed independently, under the BANKON License (Apache-2.0);
+  * may be distributed, sublicensed and used commercially by its own licensor,
+    without a Blockscout Commercial Licence;
+  * grants Blockscout Limited no licence over its source under clause 5(c) of
+    the Blockscout Software Licence, which reaches only Derivative Works.
+
+To preserve that separability, this module MUST NOT:
+
+  1. vendor, copy, or adapt any Blockscout source file;
+  2. be merged into a Blockscout source tree, build, or release artifact;
+  3. be added as an umbrella application inside the Blockscout Elixir project;
+  4. be distributed inside any repository whose contents are a Blockscout
+     Derivative Work.
+
+Deploying this module ALONGSIDE Blockscout — two services, two processes, two
+repositories, talking over HTTP — is the supported topology and preserves the
+separation. Merging it in destroys the separation and, with it, this licence.
+
+Operators who deploy Blockscout itself remain independently subject to the
+Blockscout Software Licence, including its interface-attribution requirement and
+its restriction on commercial or hosted use without a Commercial Licence. Nothing
+in this NOTICE grants any right in Blockscout, and nothing here is legal advice.
+
+--------------------------------------------------------------------------------
+UPSTREAM SERVICES
+--------------------------------------------------------------------------------
+
+This module reads public Algorand infrastructure and bundles none of it:
+
+  * Algorand algod / indexer REST APIs — Algorand Foundation / Algorand
+    Technologies. https://developer.algorand.org
+  * Default public endpoints: AlgoNode (https://algonode.io), keyless.
+    Configurable via ALGORAND_ALGOD_URL / ALGORAND_INDEXER_URL.
+
+"Blockscout" is a trademark of Blockscout Limited. It is used here nominatively,
+to identify the API shape this module is compatible with. No affiliation with,
+sponsorship by, or endorsement from Blockscout Limited is claimed or implied.
+
+"Algorand" is a trademark of the Algorand Foundation. Used nominatively. No
+affiliation or endorsement is claimed or implied.
