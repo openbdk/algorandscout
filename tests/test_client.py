@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from openbdk_algorand.client import (
+from algorandscout.client import (
     DEFAULT_ALGOD,
     DEFAULT_INDEXER,
     AlgorandClient,
@@ -47,7 +47,7 @@ class TestConfig:
         assert config.network == "testnet"
 
     def test_user_agent_always_identifies_the_module(self):
-        assert "OpenBDK" in AlgorandConfig().headers["User-Agent"]
+        assert "Algorandscout" in AlgorandConfig().headers["User-Agent"]
 
 
 class TestErrorClassification:

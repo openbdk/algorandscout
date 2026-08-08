@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from openbdk_algorand import capabilities as caps
-from openbdk_algorand.mapping import (
+from algorandscout import capabilities as caps
+from algorandscout.mapping import (
     ALGO_DECIMALS,
     classify_asset,
     decimal_string,

@@ -122,7 +122,7 @@ CAVEATS: dict[str, str] = {
 def capabilities() -> dict[str, Any]:
     """The full statement, as served at `/api/v2/capabilities`."""
     return {
-        "module": "openbdk-algorand",
+        "module": "algorandscout",
         "version": MODULE_VERSION,
         "license": "BANKON (Apache-2.0)",
         "chain": CHAIN,

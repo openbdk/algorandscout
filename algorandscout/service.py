@@ -53,7 +53,7 @@ PASSTHROUGH_PREFIXES = (
 async def lifespan(app: FastAPI):
     app.state.client = AlgorandClient(AlgorandConfig())
     log.info(
-        "openbdk-algorand %s up — network=%s algod=%s indexer=%s",
+        "algorandscout %s up — network=%s algod=%s indexer=%s",
         caps.MODULE_VERSION,
         app.state.client.config.network,
         app.state.client.config.algod_url,
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="OpenBDK Algorand Module",
+    title="Algorandscout",
     version=caps.MODULE_VERSION,
     description=(
         "Blockscout-shaped read API for Algorand. Independent work, BANKON licensed; "

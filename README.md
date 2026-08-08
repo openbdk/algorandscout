@@ -1,4 +1,4 @@
-# OpenBDK Algorand Module
+# Algorandscout
 
 **A Blockscout-shaped read API for Algorand.** Point a Blockscout-compatible client at it
 and read Algorand accounts, assets, applications, transactions and rounds — without
@@ -10,7 +10,7 @@ Licensed under the **BANKON License** (Apache-2.0) — see [`LICENSE`](LICENSE) 
 
 ```bash
 pip install -e '.[service]'
-python -m openbdk_algorand --port 8100
+python -m algorandscout --port 8100
 curl localhost:8100/api/v2/tokens/31566704
 ```
 

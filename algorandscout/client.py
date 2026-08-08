@@ -68,7 +68,7 @@ class AlgorandConfig:
     network: str = field(default_factory=lambda: os.environ.get("ALGORAND_NETWORK", "mainnet"))
     timeout_s: float = field(default_factory=lambda: float(os.environ.get("ALGORAND_TIMEOUT_S", "30")))
     user_agent: str = field(
-        default_factory=lambda: os.environ.get("ALGORAND_USER_AGENT", "OpenBDK-Algorand-Module/0.1.0")
+        default_factory=lambda: os.environ.get("ALGORAND_USER_AGENT", "Algorandscout/0.1.0")
     )
 
     def __post_init__(self) -> None:
