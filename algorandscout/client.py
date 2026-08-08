@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Mapping, Optional
 from urllib.parse import urlencode
@@ -49,6 +50,30 @@ DEFAULT_TOKEN_HEADER = "X-Algo-API-Token"
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_S = 0.4
+RETRY_JITTER_S = 0.25
+#: Cap on how long an upstream `Retry-After` may park a request. A cooperative
+#: provider sends seconds; a hostile or misconfigured one can send hours, and a
+#: request that sleeps for hours is indistinguishable from a hang.
+MAX_RETRY_AFTER_S = 10.0
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """
+    Parse a `Retry-After` header, clamped.
+
+    Only the delta-seconds form is honoured; the HTTP-date form is ignored rather
+    than guessed at, because a wrong clock skew turns a 2-second pause into a
+    2-hour one.
+    """
+    if not value:
+        return None
+    try:
+        seconds = float(value.strip())
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return min(seconds, MAX_RETRY_AFTER_S)
 
 
 class AlgorandError(RuntimeError):
@@ -61,7 +86,20 @@ class AlgorandError(RuntimeError):
 
     @property
     def retryable(self) -> bool:
-        return self.status is None or self.status >= 500
+        """
+        4xx is deterministic and must not be retried — with one exception.
+
+        429 is not a statement about the request, it is a statement about *when*
+        the request arrived. Retrying after a backoff is the documented remedy,
+        and treating it as permanent means the service fails hard under exactly
+        the load it should be riding out.
+        """
+        return self.status is None or self.status >= 500 or self.status == 429
+
+    @property
+    def caller_error(self) -> bool:
+        """True when the upstream blamed the request, not itself (4xx except 429)."""
+        return self.status is not None and 400 <= self.status < 500 and self.status != 429
 
 
 class NotFound(AlgorandError):
@@ -159,6 +197,7 @@ class AlgorandClient:
         session = await self._ensure_session()
 
         last: Optional[AlgorandError] = None
+        retry_after: Optional[float] = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 async with session.get(url, headers=self.config.headers) as resp:
@@ -170,6 +209,7 @@ class AlgorandClient:
                         if not err.retryable:
                             raise err
                         last = err
+                        retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
                     else:
                         return await resp.json(content_type=None)
             except NotFound:
@@ -182,8 +222,17 @@ class AlgorandClient:
                 last = AlgorandError(f"transport failure: {exc}", status=None, url=url)
 
             if attempt < MAX_RETRIES:
-                log.warning("algorand upstream retry %d/%d: %s", attempt, MAX_RETRIES, last)
-                await asyncio.sleep(RETRY_BACKOFF_S * attempt)
+                # Jittered exponential-ish backoff. Without jitter, a fleet of
+                # workers that hit a 429 together retries together, reproducing
+                # the burst that caused it.
+                delay = retry_after if retry_after is not None else (
+                    RETRY_BACKOFF_S * attempt + random.uniform(0, RETRY_JITTER_S)
+                )
+                log.warning(
+                    "algorand upstream retry %d/%d in %.2fs: %s", attempt, MAX_RETRIES, delay, last
+                )
+                await asyncio.sleep(delay)
+                retry_after = None
 
         raise last or AlgorandError("unknown upstream failure", url=url)
 

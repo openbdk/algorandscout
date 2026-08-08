@@ -165,8 +165,47 @@ Every "absent" above is `null` in the response and carries a structural reason i
 | `ALGORAND_TIMEOUT_S` | `30` | per request |
 | `OPENBDK_HOST` / `OPENBDK_PORT` | `127.0.0.1` / `8100` | service bind |
 
-Retry policy matches the rule Blockscout publishes for its own upstreams: **5xx retried
-three times, 4xx never** — 4xx responses are deterministic and retrying only wastes the call.
+Retry policy: **5xx retried three times with jittered backoff, 4xx never — except 429.**
+Rate limiting describes *when* the request arrived, not what was in it, so it is retried and
+`Retry-After` is honoured (clamped to 10s; the HTTP-date form is ignored rather than guessed
+at). Jitter matters because a fleet that hits a limit together otherwise retries together,
+reproducing the burst that caused it.
+
+## Production surface
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /livez` | Liveness — **independent of the upstream**. An indexer outage must not get this process killed; restarting fixes nothing |
+| `GET /readyz` | Readiness — **depends on the upstream**. Returns 503 so an instance that cannot answer leaves the load-balancer rotation |
+| `GET /metrics` | Prometheus exposition: requests by route+status, latency histogram, upstream outcomes, cache hits |
+
+**Blame attribution.** A malformed identifier is a **400**, and never reaches the upstream —
+addresses carry a checksum, so a typo is caught locally with certainty. An upstream 4xx stays a
+4xx, a 429 is passed through as 429, and only a genuine upstream failure is a **502**. Returning
+502 for a caller's typo pages the wrong person and burns the upstream error budget on client
+mistakes.
+
+**Caching.** Per-kind TTLs chosen from what the chain guarantees, not convenience: blocks and
+confirmed transactions are final on Algorand and cached for an hour (measured ~200× faster on a
+warm read); assets and applications for 5 minutes, since an `acfg` can reconfigure them.
+Accounts, balances and transaction lists are **never** cached — they change every round, and a
+stale balance is exactly the kind of wrong answer this project exists to avoid.
+
+**Observability.** Every response carries `X-Request-ID` (echoed if supplied), and metric route
+labels come from the routing table rather than the path, so a caller walking ids cannot mint
+unbounded time series.
+
+## Container
+
+```bash
+docker build -t algorandscout .
+docker run -p 8100:8100 -e ALGORAND_NETWORK=mainnet algorandscout
+```
+
+Runs as a non-root user, with a `HEALTHCHECK` on `/readyz`. CI (`.github/workflows/ci.yml`)
+runs the suite on Python 3.10–3.12, lints, builds the image and proves the container serves
+`/livez`. The tests are offline by design — a third party's outage must not turn a good build
+red.
 
 ---
 
@@ -183,7 +222,7 @@ dangerous thing than an observer.
 
 ```bash
 pip install -e '.[dev,service]'
-pytest -q          # 134 tests, no network
+pytest -q          # 186 tests, no network
 ```
 
 Fixtures in `tests/fixtures/` are **real responses captured from Algorand mainnet on

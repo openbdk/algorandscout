@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev,service]'
+      # The suite is offline by design — fixtures are captured mainnet responses.
+      # CI must never depend on a public endpoint being up, or a third party's
+      # outage becomes a red build on work that is fine.
+      - run: pytest -q
+      - run: ruff check .
+      - run: ruff format --check .
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t algorandscout:ci .
+      - name: container starts and serves liveness
+        run: |
+          docker run -d --name scout -p 8100:8100 algorandscout:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8100/livez; then echo " ok"; exit 0; fi
+            sleep 1
+          done
+          echo "container did not become live"; docker logs scout; exit 1

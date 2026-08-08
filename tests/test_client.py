@@ -57,7 +57,11 @@ class TestErrorClassification:
 
     def test_4xx_is_not_retryable(self):
         assert not AlgorandError("bad request", status=400).retryable
-        assert not AlgorandError("rate limited", status=429).retryable
+        assert not AlgorandError("not found", status=404).retryable
+
+    def test_429_is_the_one_retryable_4xx(self):
+        """Rate limiting describes when the request arrived, not what was in it."""
+        assert AlgorandError("rate limited", status=429).retryable
 
     def test_transport_failure_is_retryable(self):
         assert AlgorandError("connection reset", status=None).retryable

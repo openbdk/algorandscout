@@ -18,14 +18,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import capabilities as caps
+from .cache import TTLCache
 from .client import AlgorandClient, AlgorandConfig, AlgorandError, NotFound
+from .metrics import METRICS, route_label
+from .validation import (
+    ValidationError,
+    classify_query,
+    validate_address,
+    validate_txid,
+    validate_uint64,
+)
 from .mapping import (
     map_account,
     map_account_assets,
@@ -58,6 +69,8 @@ PASSTHROUGH_PREFIXES = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = AlgorandClient(AlgorandConfig())
+    app.state.cache = TTLCache()
+    app.state.started_at = time.time()
     log.info(
         "algorandscout %s up — network=%s algod=%s indexer=%s",
         caps.MODULE_VERSION,
@@ -87,10 +100,77 @@ def client(request: Request) -> AlgorandClient:
     return request.app.state.client
 
 
+def cache(request: Request) -> TTLCache:
+    return request.app.state.cache
+
+
+def _route_for(request: Request) -> str:
+    """
+    The matched route *template*, for use as a metric label.
+
+    Read from the routing table rather than inferred from the path. A heuristic
+    misses anything it did not anticipate — `/api/v2/tokens/-5` is not `.isdigit()`,
+    so it survived as its own label and let a caller mint unbounded time series
+    just by walking negative ids. Unmatched paths collapse to a single bucket for
+    the same reason: 404-probing must not be able to grow the metric space.
+    """
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if template:
+        return template
+    return "<unmatched>"
+
+
+@app.middleware("http")
+async def observability(request: Request, call_next):
+    """
+    Correlate and measure every request.
+
+    The request id is echoed back so a caller reporting "it was slow at 14:03"
+    can be matched to a log line without guessing.
+    """
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:16]
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+        status = response.status_code
+    except Exception:
+        METRICS.observe_request(_route_for(request), 500, time.perf_counter() - started)
+        log.exception("unhandled error [%s] %s %s", request_id, request.method, request.url.path)
+        raise
+    duration = time.perf_counter() - started
+    METRICS.observe_request(_route_for(request), status, duration)
+    response.headers["X-Request-ID"] = request_id
+    log.info(
+        "%s %s %s %.3fs [%s]", request.method, request.url.path, status, duration, request_id
+    )
+    return response
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError) -> JSONResponse:
+    """A malformed identifier is the caller's problem: 400, and never an upstream call."""
+    return JSONResponse(status_code=400, content={"error": str(exc), "kind": "validation"})
+
+
 @app.exception_handler(AlgorandError)
 async def algorand_error_handler(request: Request, exc: AlgorandError) -> JSONResponse:
-    """Upstream failures surface as themselves — a 502 for a dead indexer, not a fake 200."""
-    status = 404 if isinstance(exc, NotFound) else 502
+    """
+    Attribute the failure honestly.
+
+    A 502 means "the upstream is broken" and pages someone. Returning it for a
+    request the upstream rejected as malformed misdirects that page and burns the
+    upstream error budget on client mistakes — so a caller error stays a 4xx.
+    """
+    if isinstance(exc, NotFound):
+        status = 404
+    elif exc.status == 429:
+        status = 429  # pass the backpressure through rather than masking it as 502
+    elif exc.caller_error:
+        status = 400
+    else:
+        status = 502
+    METRICS.observe_upstream("indexer", "caller_error" if status < 500 else "upstream_error")
     return JSONResponse(status_code=status, content={"error": str(exc), "upstream_status": exc.status})
 
 
@@ -100,6 +180,41 @@ async def algorand_error_handler(request: Request, exc: AlgorandError) -> JSONRe
 @app.get("/health", tags=["meta"])
 async def health(request: Request) -> dict[str, Any]:
     return await client(request).health()
+
+
+@app.get("/livez", tags=["meta"])
+async def livez() -> dict[str, str]:
+    """
+    Liveness: is this process able to serve at all.
+
+    Deliberately independent of the upstream. If the indexer is down, this
+    service is still alive and correctly reporting that fact — restarting it
+    would fix nothing, so a liveness probe must not fail on someone else's outage.
+    """
+    return {"status": "alive"}
+
+
+@app.get("/readyz", tags=["meta"])
+async def readyz(request: Request) -> JSONResponse:
+    """
+    Readiness: can this process actually answer questions right now.
+
+    Unlike liveness, this DOES depend on the upstream — an instance that cannot
+    reach the indexer should be taken out of the load-balancer rotation, not killed.
+    """
+    health_payload = await client(request).health()
+    ready = bool(health_payload.get("healthy"))
+    return JSONResponse(status_code=200 if ready else 503, content={"ready": ready, **health_payload})
+
+
+@app.get("/metrics", tags=["meta"], response_class=PlainTextResponse)
+async def metrics(request: Request) -> str:
+    """Prometheus exposition. No auth: it carries counters, never chain data or secrets."""
+    uptime = time.time() - getattr(request.app.state, "started_at", time.time())
+    return METRICS.render(
+        cache_stats=cache(request).stats,
+        extra={"uptime_seconds": round(uptime, 1), "cache_entries": len(cache(request))},
+    )
 
 
 @app.get("/api/v2/capabilities", tags=["meta"])
@@ -121,6 +236,7 @@ async def stats(request: Request) -> dict[str, Any]:
 
 @app.get("/api/v2/addresses/{address}", tags=["blockscout"])
 async def get_address(address: str, request: Request, live: bool = Query(False)) -> dict[str, Any]:
+    validate_address(address)
     payload = await client(request).account(address, live=live)
     return map_account(payload)
 
@@ -136,6 +252,9 @@ async def get_address_transactions(
     tx_type: Optional[str] = Query(None, description="pay | axfer | acfg | afrz | appl | keyreg | stpf"),
     asset_id: Optional[int] = Query(None),
 ) -> dict[str, Any]:
+    validate_address(address)
+    if asset_id is not None:
+        validate_uint64(asset_id, name="asset_id")
     c = client(request)
     payload = await c.account_transactions(
         address,
@@ -163,6 +282,7 @@ async def get_address_token_balances(
     *separate* surface — an answer built from this endpoint alone omits what is usually
     the largest position.
     """
+    validate_address(address)
     c = client(request)
     payload = await c.account_assets(address, limit=limit, next_token=next_token)
 
@@ -196,7 +316,12 @@ async def get_address_token_balances(
 
 @app.get("/api/v2/transactions/{txid}", tags=["blockscout"])
 async def get_transaction(txid: str, request: Request) -> dict[str, Any]:
-    payload = await client(request).transaction(txid)
+    validate_txid(txid)
+    payload = await cache(request).get_or_fetch(
+        # A confirmed transaction is final on Algorand — there is no reorg that
+        # could change it, so it is safe to cache for as long as we like.
+        "transaction", txid, lambda: client(request).transaction(txid)
+    )
     tx = payload.get("transaction")
     if not tx:
         raise HTTPException(status_code=404, detail="transaction not found")
@@ -216,7 +341,10 @@ async def get_block(
     request: Request,
     include_transactions: bool = Query(False, description="Off by default; a busy round is large"),
 ) -> dict[str, Any]:
-    payload = await client(request).block(round_number)
+    validate_uint64(round_number, name="round")
+    payload = await cache(request).get_or_fetch(
+        "block", str(round_number), lambda: client(request).block(round_number)
+    )
     return map_block(payload, include_transactions=include_transactions)
 
 
@@ -236,7 +364,10 @@ async def get_latest_block(request: Request) -> dict[str, Any]:
 
 @app.get("/api/v2/tokens/{asset_id}", tags=["blockscout"])
 async def get_token(asset_id: int, request: Request) -> dict[str, Any]:
-    payload = await client(request).asset(asset_id)
+    validate_uint64(asset_id, name="asset_id")
+    payload = await cache(request).get_or_fetch(
+        "asset", str(asset_id), lambda: client(request).asset(asset_id)
+    )
     return map_asset(payload)
 
 
@@ -248,6 +379,7 @@ async def get_token_holders(
     next_token: Optional[str] = Query(None),
     resolve: bool = Query(True, description="Resolve the ASA's decimals so holdings render as decimals"),
 ) -> dict[str, Any]:
+    validate_uint64(asset_id, name="asset_id")
     c = client(request)
     payload = await c.asset_balances(asset_id, limit=limit, next_token=next_token)
     decimals = None
@@ -264,7 +396,10 @@ async def get_token_holders(
 
 @app.get("/api/v2/smart-contracts/{app_id}", tags=["blockscout"])
 async def get_smart_contract(app_id: int, request: Request) -> dict[str, Any]:
-    payload = await client(request).application(app_id)
+    validate_uint64(app_id, name="app_id")
+    payload = await cache(request).get_or_fetch(
+        "application", str(app_id), lambda: client(request).application(app_id)
+    )
     return map_application(payload)
 
 
@@ -290,20 +425,28 @@ async def search(
     results: list[dict[str, Any]] = []
     query = q.strip()
 
-    if len(query) == 58 and query.isalnum() and query.isupper():
+    kind = classify_query(query)
+
+    if kind == "address":
         try:
             results.append({"type": "address", "data": map_account(await c.account(query))})
         except AlgorandError:
             pass
-    elif len(query) == 52 and query.isalnum() and query.isupper():
+    elif kind == "transaction":
         try:
             payload = await c.transaction(query)
             if payload.get("transaction"):
                 results.append({"type": "transaction", "data": map_transaction(payload["transaction"])})
         except AlgorandError:
             pass
-    elif query.isdigit():
+    elif kind == "numeric":
         numeric = int(query)
+        try:
+            validate_uint64(numeric, name="id")
+        except ValidationError:
+            # Out of uint64 range cannot name anything on chain; fall through to
+            # returning no results rather than asking the upstream about it.
+            return {"items": [], "note": "numeric term exceeds uint64 range; cannot match an asset or app id."}
         for kind, fetch, mapper in (
             ("token", c.asset, map_asset),
             ("smart_contract", c.application, map_application),

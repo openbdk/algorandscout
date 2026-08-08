@@ -21,6 +21,10 @@ from algorandscout.service import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+#: A real, checksum-valid mainnet address. "ADDR" no longer reaches the routes:
+#: identifiers are validated at the boundary now, which is the point.
+ADDR = "2UEQTE5QDNXPI7M3TU44G6SYKLFWLPQO7EBZM7K7MHMQQMFI4QJPLHQFHM"
+
 
 def fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
@@ -134,40 +138,40 @@ class TestMetaRoutes:
 class TestAddressRoutes:
     def test_address(self, api):
         client, _ = api
-        body = client.get("/api/v2/addresses/ADDR").json()
+        body = client.get("/api/v2/addresses/" + ADDR + "").json()
         assert body["coin_balance_decimal"] == "5401.728855"
         assert body["nonce"] is None
 
     def test_live_flag_reaches_the_client(self, api):
         client, stub = api
-        client.get("/api/v2/addresses/ADDR?live=true")
-        assert ("account", ("ADDR", True)) in stub.calls
+        client.get("/api/v2/addresses/" + ADDR + "?live=true")
+        assert ("account", (ADDR, True)) in stub.calls
 
     def test_transactions_carry_confirmations(self, api):
         client, _ = api
-        body = client.get("/api/v2/addresses/ADDR/transactions").json()
+        body = client.get("/api/v2/addresses/" + ADDR + "/transactions").json()
         assert body["items"][0]["confirmations"] is not None
 
     def test_time_window_forwarded(self, api):
         client, stub = api
-        client.get("/api/v2/addresses/ADDR/transactions?after_time=2026-01-01T00:00:00Z&tx_type=axfer")
+        client.get("/api/v2/addresses/" + ADDR + "/transactions?after_time=2026-01-01T00:00:00Z&tx_type=axfer")
         kwargs = dict(next(c[1][1] for c in stub.calls if c[0] == "account_transactions"))
         assert kwargs["after_time"] == "2026-01-01T00:00:00Z"
         assert kwargs["tx_type"] == "axfer"
 
     def test_limit_is_bounded(self, api):
         client, _ = api
-        assert client.get("/api/v2/addresses/ADDR/transactions?limit=101").status_code == 422
+        assert client.get("/api/v2/addresses/" + ADDR + "/transactions?limit=101").status_code == 422
 
     def test_token_balances_resolve_metadata(self, api):
         client, _ = api
-        item = client.get("/api/v2/addresses/ADDR/token-balances").json()["items"][0]
+        item = client.get("/api/v2/addresses/" + ADDR + "/token-balances").json()["items"][0]
         assert item["token"]["symbol"] == "USDC"
         assert item["value_decimal"] == "1.5"
 
     def test_resolve_false_skips_upstream_lookups(self, api):
         client, stub = api
-        client.get("/api/v2/addresses/ADDR/token-balances?resolve=false")
+        client.get("/api/v2/addresses/" + ADDR + "/token-balances?resolve=false")
         assert stub.asset_calls == 0
 
 
