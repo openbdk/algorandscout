@@ -20,7 +20,7 @@ __all__ = [
     "AlgorandConfig",
     "AlgorandError",
     "NotFound",
+    "__version__",
     "capabilities",
     "get_capabilities",
-    "__version__",
 ]

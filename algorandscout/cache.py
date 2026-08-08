@@ -18,8 +18,9 @@ from __future__ import annotations
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 #: Per-kind time-to-live, in seconds. The rule is what the chain guarantees,
 #: not what would be convenient.
@@ -64,7 +65,7 @@ class TTLCache:
     """
 
     def __init__(self, max_entries: int = MAX_ENTRIES_PER_KIND) -> None:
-        self._data: "OrderedDict[tuple[str, str], tuple[float, Any]]" = OrderedDict()
+        self._data: OrderedDict[tuple[str, str], tuple[float, Any]] = OrderedDict()
         self._lock = threading.Lock()
         self._max = max_entries
         self.stats = CacheStats()
@@ -73,7 +74,7 @@ class TTLCache:
     def _now() -> float:
         return time.monotonic()
 
-    def get(self, kind: str, key: str) -> Optional[Any]:
+    def get(self, kind: str, key: str) -> Any | None:
         ttl = TTL_SECONDS.get(kind)
         if ttl is None:  # not a cacheable kind — always a miss, never stored
             return None

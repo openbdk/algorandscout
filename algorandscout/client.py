@@ -21,8 +21,9 @@ import asyncio
 import logging
 import os
 import random
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Mapping, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
@@ -57,7 +58,7 @@ RETRY_JITTER_S = 0.25
 MAX_RETRY_AFTER_S = 10.0
 
 
-def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+def _parse_retry_after(value: str | None) -> float | None:
     """
     Parse a `Retry-After` header, clamped.
 
@@ -79,7 +80,7 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
 class AlgorandError(RuntimeError):
     """Upstream returned an error. `status` is the HTTP status, or None on transport failure."""
 
-    def __init__(self, message: str, *, status: Optional[int] = None, url: str = "") -> None:
+    def __init__(self, message: str, *, status: int | None = None, url: str = "") -> None:
         super().__init__(message)
         self.status = status
         self.url = url
@@ -111,14 +112,10 @@ class AlgorandConfig:
     algod_url: str = ""
     indexer_url: str = ""
     api_token: str = field(default_factory=lambda: os.environ.get("ALGORAND_API_TOKEN", ""))
-    token_header: str = field(
-        default_factory=lambda: os.environ.get("ALGORAND_API_TOKEN_HEADER", DEFAULT_TOKEN_HEADER)
-    )
+    token_header: str = field(default_factory=lambda: os.environ.get("ALGORAND_API_TOKEN_HEADER", DEFAULT_TOKEN_HEADER))
     network: str = field(default_factory=lambda: os.environ.get("ALGORAND_NETWORK", "mainnet").lower())
     timeout_s: float = field(default_factory=lambda: float(os.environ.get("ALGORAND_TIMEOUT_S", "30")))
-    user_agent: str = field(
-        default_factory=lambda: os.environ.get("ALGORAND_USER_AGENT", "Algorandscout/0.1.0")
-    )
+    user_agent: str = field(default_factory=lambda: os.environ.get("ALGORAND_USER_AGENT", "Algorandscout/1.0.0"))
 
     def __post_init__(self) -> None:
         if self.network not in NETWORK_ENDPOINTS:
@@ -131,9 +128,7 @@ class AlgorandConfig:
         # Precedence: explicit argument > environment > network-derived default. An explicit
         # URL always wins, because self-hosted nodes and paid providers are the normal case.
         self.algod_url = (self.algod_url or os.environ.get("ALGORAND_ALGOD_URL") or default_algod).rstrip("/")
-        self.indexer_url = (
-            self.indexer_url or os.environ.get("ALGORAND_INDEXER_URL") or default_indexer
-        ).rstrip("/")
+        self.indexer_url = (self.indexer_url or os.environ.get("ALGORAND_INDEXER_URL") or default_indexer).rstrip("/")
 
         # A URL that names a *different* network than the label is how mainnet data ends up
         # reported as testnet. It can be legitimate (a proxy, a private node), so this warns
@@ -166,16 +161,18 @@ class AlgorandClient:
     dangerous thing.
     """
 
-    def __init__(self, config: Optional[AlgorandConfig] = None, session: Optional[aiohttp.ClientSession] = None):
+    def __init__(self, config: AlgorandConfig | None = None, session: aiohttp.ClientSession | None = None):
         self.config = config or AlgorandConfig()
         self._session = session
         self._owns_session = session is None
 
-    async def __aenter__(self) -> "AlgorandClient":
+    # PYI034: `typing.Self` would be the better annotation, but it lands in typing
+    # only in 3.11 and this package supports 3.10 without pulling typing_extensions.
+    async def __aenter__(self) -> AlgorandClient:  # noqa: PYI034
         await self._ensure_session()
         return self
 
-    async def __aexit__(self, *exc: Any) -> None:
+    async def __aexit__(self, *exc: object) -> None:
         await self.close()
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
@@ -191,13 +188,13 @@ class AlgorandClient:
 
     # ---------------------------------------------------------------- transport
 
-    async def _get(self, base: str, path: str, params: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
+    async def _get(self, base: str, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
         query = {k: v for k, v in (params or {}).items() if v is not None}
         url = f"{base}{path}" + (f"?{urlencode(query)}" if query else "")
         session = await self._ensure_session()
 
-        last: Optional[AlgorandError] = None
-        retry_after: Optional[float] = None
+        last: AlgorandError | None = None
+        retry_after: float | None = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 async with session.get(url, headers=self.config.headers) as resp:
@@ -225,21 +222,21 @@ class AlgorandClient:
                 # Jittered exponential-ish backoff. Without jitter, a fleet of
                 # workers that hit a 429 together retries together, reproducing
                 # the burst that caused it.
-                delay = retry_after if retry_after is not None else (
-                    RETRY_BACKOFF_S * attempt + random.uniform(0, RETRY_JITTER_S)
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else (RETRY_BACKOFF_S * attempt + random.uniform(0, RETRY_JITTER_S))
                 )
-                log.warning(
-                    "algorand upstream retry %d/%d in %.2fs: %s", attempt, MAX_RETRIES, delay, last
-                )
+                log.warning("algorand upstream retry %d/%d in %.2fs: %s", attempt, MAX_RETRIES, delay, last)
                 await asyncio.sleep(delay)
                 retry_after = None
 
         raise last or AlgorandError("unknown upstream failure", url=url)
 
-    async def algod(self, path: str, params: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
+    async def algod(self, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
         return await self._get(self.config.algod_url, path, params)
 
-    async def indexer(self, path: str, params: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
+    async def indexer(self, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
         return await self._get(self.config.indexer_url, path, params)
 
     # ------------------------------------------------------------------ reads
@@ -296,7 +293,7 @@ class AlgorandClient:
             return await self.algod(f"/v2/accounts/{address}")
         return await self.indexer(f"/v2/accounts/{address}")
 
-    async def account_assets(self, address: str, *, limit: int = 50, next_token: Optional[str] = None) -> dict[str, Any]:
+    async def account_assets(self, address: str, *, limit: int = 50, next_token: str | None = None) -> dict[str, Any]:
         return await self.indexer(f"/v2/accounts/{address}/assets", {"limit": limit, "next": next_token})
 
     async def account_transactions(
@@ -304,11 +301,11 @@ class AlgorandClient:
         address: str,
         *,
         limit: int = 20,
-        next_token: Optional[str] = None,
-        after_time: Optional[str] = None,
-        before_time: Optional[str] = None,
-        tx_type: Optional[str] = None,
-        asset_id: Optional[int] = None,
+        next_token: str | None = None,
+        after_time: str | None = None,
+        before_time: str | None = None,
+        tx_type: str | None = None,
+        asset_id: int | None = None,
     ) -> dict[str, Any]:
         """
         `after_time`/`before_time` are RFC-3339. These are the only endpoints with a real
@@ -336,29 +333,33 @@ class AlgorandClient:
     async def asset(self, asset_id: int) -> dict[str, Any]:
         return await self.indexer(f"/v2/assets/{asset_id}")
 
-    async def asset_balances(self, asset_id: int, *, limit: int = 50, next_token: Optional[str] = None) -> dict[str, Any]:
+    async def asset_balances(self, asset_id: int, *, limit: int = 50, next_token: str | None = None) -> dict[str, Any]:
         return await self.indexer(f"/v2/assets/{asset_id}/balances", {"limit": limit, "next": next_token})
 
     async def application(self, app_id: int) -> dict[str, Any]:
         return await self.indexer(f"/v2/applications/{app_id}")
 
-    async def application_boxes(self, app_id: int, *, limit: int = 50, next_token: Optional[str] = None) -> dict[str, Any]:
+    async def application_boxes(self, app_id: int, *, limit: int = 50, next_token: str | None = None) -> dict[str, Any]:
         return await self.indexer(f"/v2/applications/{app_id}/boxes", {"limit": limit, "next": next_token})
 
-    async def search_assets(self, *, unit: Optional[str] = None, name: Optional[str] = None, limit: int = 10) -> dict[str, Any]:
+    async def search_assets(
+        self, *, unit: str | None = None, name: str | None = None, limit: int = 10
+    ) -> dict[str, Any]:
         """Symbol lookup. Returns *candidates* — ASA unit-names are not unique and never were."""
         return await self.indexer("/v2/assets", {"unit": unit, "name": name, "limit": limit})
 
     # -------------------------------------------------------------- pagination
 
-    async def paginate(self, method: str, *args: Any, max_pages: int = 20, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+    async def paginate(
+        self, method: str, *args: Any, max_pages: int = 20, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
         """
         Follow Algorand's `next-token` cursor. Bounded by `max_pages` on purpose: an
         unbounded follow on a hot account walks the whole chain. Callers that genuinely
         want everything must raise the bound explicitly and know what they asked for.
         """
         fn = getattr(self, method)
-        token: Optional[str] = None
+        token: str | None = None
         for page in range(max_pages):
             payload = await fn(*args, next_token=token, **kwargs)
             yield payload

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-MODULE_VERSION = "0.1.0"
+MODULE_VERSION = "1.0.0"
 
 #: Verified against the live mainnet indexer on 2026-08-08.
 CHAIN = {

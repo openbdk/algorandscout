@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import threading
 from collections import defaultdict
-from typing import Iterable
 
 #: Latency buckets in seconds. Spread wide because the upstream is a public
 #: endpoint on the open internet, not a service in the same rack.
@@ -124,26 +123,6 @@ class Metrics:
 
 def _esc(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
-
-
-def route_label(path: str) -> str:
-    """
-    Collapse a concrete path into its route template.
-
-    Without this, every address and txid becomes its own metric label and the
-    time series count grows without bound — the classic way a metrics endpoint
-    takes down the monitoring system it reports to.
-    """
-    parts = path.strip("/").split("/")
-    out: list[str] = []
-    for part in parts:
-        if part.isdigit():
-            out.append("{id}")
-        elif len(part) in (52, 58) and part.isalnum() and part.isupper():
-            out.append("{hash}")
-        else:
-            out.append(part)
-    return "/" + "/".join(out)
 
 
 METRICS = Metrics()

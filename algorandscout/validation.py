@@ -22,7 +22,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
-from typing import Optional
 
 #: RFC-4648 base32 — note the absent 0, 1, 8 and 9.
 BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -80,7 +79,7 @@ def validate_address(address: str) -> str:
         raw = _b32_decode(address, 36)
     except ValidationError:
         raise
-    except Exception as exc:  # noqa: BLE001 — any decode failure is a caller error
+    except Exception as exc:
         raise ValidationError(f"address is not decodable base32: {exc}") from exc
 
     public_key, checksum = raw[:32], raw[32:]
@@ -106,7 +105,7 @@ def validate_txid(txid: str) -> str:
         _b32_decode(txid, 32)
     except ValidationError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ValidationError(f"transaction id is not decodable base32: {exc}") from exc
 
     return txid
@@ -123,7 +122,7 @@ def validate_uint64(value: int, *, name: str = "id") -> int:
     return value
 
 
-def classify_query(query: str) -> Optional[str]:
+def classify_query(query: str) -> str | None:
     """
     Identify what a search term *is*, by shape.
 

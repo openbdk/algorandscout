@@ -20,7 +20,7 @@ captured 2026-08-08 and kept in `tests/fixtures/`.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 ALGO_DECIMALS = 6
 MICRO_ALGO = 10**6
@@ -55,14 +55,14 @@ ZERO_ADDRESS = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ"
 # ------------------------------------------------------------------ primitives
 
 
-def iso(timestamp: Optional[int]) -> Optional[str]:
+def iso(timestamp: int | None) -> str | None:
     """Unix seconds → ISO-8601 UTC. Algorand round-times are seconds, not milliseconds."""
     if timestamp is None:
         return None
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def decimal_string(amount: Optional[int], decimals: int) -> Optional[str]:
+def decimal_string(amount: int | None, decimals: int) -> str | None:
     """
     Integer base units → decimal string, without float. Amounts on Algorand routinely
     exceed 2^53 (the USDC ASA total is 2^64-1), so anything that touches a float here is
@@ -79,11 +79,11 @@ def decimal_string(amount: Optional[int], decimals: int) -> Optional[str]:
     return f"{sign}{whole}.{frac}" if frac else f"{sign}{whole}"
 
 
-def is_zero_address(address: Optional[str]) -> bool:
+def is_zero_address(address: str | None) -> bool:
     return address == ZERO_ADDRESS
 
 
-def _clean(address: Optional[str]) -> Optional[str]:
+def _clean(address: str | None) -> str | None:
     """The all-zero address means 'unset' in ASA params, not 'owned by nobody'."""
     return None if address is None or is_zero_address(address) else address
 
@@ -130,7 +130,7 @@ def map_account(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def map_account_assets(payload: dict[str, Any], asset_params: Optional[dict[int, dict]] = None) -> dict[str, Any]:
+def map_account_assets(payload: dict[str, Any], asset_params: dict[int, dict] | None = None) -> dict[str, Any]:
     """
     Indexer `/v2/accounts/{addr}/assets` → token-balance list.
 
@@ -160,7 +160,7 @@ def map_account_assets(payload: dict[str, Any], asset_params: Optional[dict[int,
 # ----------------------------------------------------------------------- token
 
 
-def _token_stub(asset_id: Optional[int], params: dict[str, Any]) -> dict[str, Any]:
+def _token_stub(asset_id: int | None, params: dict[str, Any]) -> dict[str, Any]:
     total = params.get("total")
     decimals = params.get("decimals")
     return {
@@ -410,7 +410,7 @@ def map_transaction(tx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _extract_movement(tx_type: Optional[str], detail: dict[str, Any]) -> tuple[Optional[str], Optional[int], Optional[dict]]:
+def _extract_movement(tx_type: str | None, detail: dict[str, Any]) -> tuple[str | None, int | None, dict | None]:
     """Returns (counterparty, native value, token-transfer block) for the given type."""
     if tx_type == "pay":
         return detail.get("receiver"), detail.get("amount", 0), None
@@ -442,7 +442,7 @@ def _extract_movement(tx_type: Optional[str], detail: dict[str, Any]) -> tuple[O
     return None, 0, None
 
 
-def _extract_close(tx_type: Optional[str], detail: dict[str, Any], tx: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _extract_close(tx_type: str | None, detail: dict[str, Any], tx: dict[str, Any]) -> dict[str, Any] | None:
     """
     Account/holding closure — the movement that hides inside a transaction's fine print.
 
@@ -490,7 +490,7 @@ def _extract_close(tx_type: Optional[str], detail: dict[str, Any], tx: dict[str,
     return None
 
 
-def _signature_type(signature: dict[str, Any]) -> Optional[str]:
+def _signature_type(signature: dict[str, Any]) -> str | None:
     if "sig" in signature:
         return "ed25519"
     if "multisig" in signature:
@@ -500,7 +500,7 @@ def _signature_type(signature: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def map_transaction_list(payload: dict[str, Any], *, chain_tip: Optional[int] = None) -> dict[str, Any]:
+def map_transaction_list(payload: dict[str, Any], *, chain_tip: int | None = None) -> dict[str, Any]:
     """Transaction page → `{items, next_page_params}`, with confirmations filled if the tip is known."""
     items = []
     for tx in payload.get("transactions", []) or []:
@@ -511,7 +511,7 @@ def map_transaction_list(payload: dict[str, Any], *, chain_tip: Optional[int] = 
     return {"items": items, "next_page_params": _next_page(payload)}
 
 
-def _next_page(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _next_page(payload: dict[str, Any]) -> dict[str, Any] | None:
     token = payload.get("next-token")
     return {"next_token": token} if token else None
 
@@ -519,7 +519,7 @@ def _next_page(payload: dict[str, Any]) -> Optional[dict[str, Any]]:
 # ----------------------------------------------------------------------- stats
 
 
-def map_asset_holders(payload: dict[str, Any], *, decimals: Optional[int] = None) -> dict[str, Any]:
+def map_asset_holders(payload: dict[str, Any], *, decimals: int | None = None) -> dict[str, Any]:
     """Indexer `/v2/assets/{id}/balances` → holder page."""
     items = [
         {

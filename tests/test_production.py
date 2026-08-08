@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from algorandscout.cache import TTL_SECONDS, TTLCache
 from algorandscout.client import MAX_RETRY_AFTER_S, AlgorandError, NotFound, _parse_retry_after
-from algorandscout.metrics import Metrics, route_label
+from algorandscout.metrics import Metrics
 from algorandscout.service import app
 from algorandscout.validation import (
     ValidationError,
@@ -206,12 +206,6 @@ class TestCache:
 
 
 class TestMetrics:
-    def test_route_label_collapses_ids_to_avoid_cardinality_blowup(self):
-        """Unbounded label cardinality is how a /metrics endpoint kills Prometheus."""
-        assert route_label(f"/api/v2/addresses/{REAL_ADDRESS}") == "/api/v2/addresses/{hash}"
-        assert route_label("/api/v2/tokens/31566704") == "/api/v2/tokens/{id}"
-        assert route_label(f"/api/v2/transactions/{REAL_TXID}") == "/api/v2/transactions/{hash}"
-
     def test_exposition_is_well_formed(self):
         m = Metrics()
         m.observe_request("/api/v2/stats", 200, 0.12)

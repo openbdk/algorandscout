@@ -21,7 +21,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -29,14 +29,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from . import capabilities as caps
 from .cache import TTLCache
 from .client import AlgorandClient, AlgorandConfig, AlgorandError, NotFound
-from .metrics import METRICS, route_label
-from .validation import (
-    ValidationError,
-    classify_query,
-    validate_address,
-    validate_txid,
-    validate_uint64,
-)
 from .mapping import (
     map_account,
     map_account_assets,
@@ -47,6 +39,14 @@ from .mapping import (
     map_stats,
     map_transaction,
     map_transaction_list,
+)
+from .metrics import METRICS
+from .validation import (
+    ValidationError,
+    classify_query,
+    validate_address,
+    validate_txid,
+    validate_uint64,
 )
 
 log = logging.getLogger(__name__)
@@ -141,9 +141,7 @@ async def observability(request: Request, call_next):
     duration = time.perf_counter() - started
     METRICS.observe_request(_route_for(request), status, duration)
     response.headers["X-Request-ID"] = request_id
-    log.info(
-        "%s %s %s %.3fs [%s]", request.method, request.url.path, status, duration, request_id
-    )
+    log.info("%s %s %s %.3fs [%s]", request.method, request.url.path, status, duration, request_id)
     return response
 
 
@@ -246,11 +244,11 @@ async def get_address_transactions(
     address: str,
     request: Request,
     limit: int = Query(20, ge=1, le=100),
-    next_token: Optional[str] = Query(None),
-    after_time: Optional[str] = Query(None, description="RFC-3339; the Algorand analogue of age_from"),
-    before_time: Optional[str] = Query(None, description="RFC-3339; the Algorand analogue of age_to"),
-    tx_type: Optional[str] = Query(None, description="pay | axfer | acfg | afrz | appl | keyreg | stpf"),
-    asset_id: Optional[int] = Query(None),
+    next_token: str | None = Query(None),
+    after_time: str | None = Query(None, description="RFC-3339; the Algorand analogue of age_from"),
+    before_time: str | None = Query(None, description="RFC-3339; the Algorand analogue of age_to"),
+    tx_type: str | None = Query(None, description="pay | axfer | acfg | afrz | appl | keyreg | stpf"),
+    asset_id: int | None = Query(None),
 ) -> dict[str, Any]:
     validate_address(address)
     if asset_id is not None:
@@ -274,7 +272,7 @@ async def get_address_token_balances(
     address: str,
     request: Request,
     limit: int = Query(50, ge=1, le=100),
-    next_token: Optional[str] = Query(None),
+    next_token: str | None = Query(None),
     resolve: bool = Query(True, description="Resolve ASA metadata (name/decimals) per holding"),
 ) -> dict[str, Any]:
     """
@@ -295,7 +293,7 @@ async def get_address_token_balances(
         asset_ids = {h["asset-id"] for h in (payload.get("assets") or []) if h.get("asset-id") is not None}
         semaphore = asyncio.Semaphore(RESOLVE_CONCURRENCY)
 
-        async def resolve_one(asset_id: int) -> tuple[int, Optional[dict]]:
+        async def resolve_one(asset_id: int) -> tuple[int, dict | None]:
             async with semaphore:
                 try:
                     asset_payload = await c.asset(asset_id)
@@ -320,7 +318,9 @@ async def get_transaction(txid: str, request: Request) -> dict[str, Any]:
     payload = await cache(request).get_or_fetch(
         # A confirmed transaction is final on Algorand — there is no reorg that
         # could change it, so it is safe to cache for as long as we like.
-        "transaction", txid, lambda: client(request).transaction(txid)
+        "transaction",
+        txid,
+        lambda: client(request).transaction(txid),
     )
     tx = payload.get("transaction")
     if not tx:
@@ -342,9 +342,7 @@ async def get_block(
     include_transactions: bool = Query(False, description="Off by default; a busy round is large"),
 ) -> dict[str, Any]:
     validate_uint64(round_number, name="round")
-    payload = await cache(request).get_or_fetch(
-        "block", str(round_number), lambda: client(request).block(round_number)
-    )
+    payload = await cache(request).get_or_fetch("block", str(round_number), lambda: client(request).block(round_number))
     return map_block(payload, include_transactions=include_transactions)
 
 
@@ -365,9 +363,7 @@ async def get_latest_block(request: Request) -> dict[str, Any]:
 @app.get("/api/v2/tokens/{asset_id}", tags=["explorer"])
 async def get_token(asset_id: int, request: Request) -> dict[str, Any]:
     validate_uint64(asset_id, name="asset_id")
-    payload = await cache(request).get_or_fetch(
-        "asset", str(asset_id), lambda: client(request).asset(asset_id)
-    )
+    payload = await cache(request).get_or_fetch("asset", str(asset_id), lambda: client(request).asset(asset_id))
     return map_asset(payload)
 
 
@@ -376,7 +372,7 @@ async def get_token_holders(
     asset_id: int,
     request: Request,
     limit: int = Query(50, ge=1, le=100),
-    next_token: Optional[str] = Query(None),
+    next_token: str | None = Query(None),
     resolve: bool = Query(True, description="Resolve the ASA's decimals so holdings render as decimals"),
 ) -> dict[str, Any]:
     validate_uint64(asset_id, name="asset_id")
@@ -397,9 +393,7 @@ async def get_token_holders(
 @app.get("/api/v2/smart-contracts/{app_id}", tags=["explorer"])
 async def get_smart_contract(app_id: int, request: Request) -> dict[str, Any]:
     validate_uint64(app_id, name="app_id")
-    payload = await cache(request).get_or_fetch(
-        "application", str(app_id), lambda: client(request).application(app_id)
-    )
+    payload = await cache(request).get_or_fetch("application", str(app_id), lambda: client(request).application(app_id))
     return map_application(payload)
 
 

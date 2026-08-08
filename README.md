@@ -150,7 +150,7 @@ than an observer.
 
 ```bash
 pip install -e '.[dev,service]'
-pytest -q          # 186 tests, no network
+pytest -q          # 185 tests, no network
 ```
 
 Fixtures are **real responses captured from Algorand mainnet** — the USDC ASA (31566704), a
